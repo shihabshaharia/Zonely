@@ -1,4 +1,4 @@
-# Zonly ⚡
+# Zonely ⚡
 
 A native macOS menu bar app for quickly viewing world times with a Spotlight-style interface.
 
@@ -8,14 +8,28 @@ A native macOS menu bar app for quickly viewing world times with a Spotlight-sty
 
 ## Features
 
+### Core
 - 🔍 **Spotlight-style Interface** — Beautiful, floating search window with glassmorphic design
 - ⌨️ **Global Hotkey** — Press `Option + Space` from anywhere to toggle
-- 🌍 **60+ Cities** — Comprehensive coverage of Asian cities and major world cities
+- 🌍 **250+ Cities** — Comprehensive worldwide coverage across all continents
 - 🔎 **Smart Search** — Filter by city name, country, or timezone keywords
 - ⏰ **Time Travel** — Slider to preview times ±12 hours in the future/past
-- 📍 **Local Timezone** — Your current location shown at the top
+- 📍 **Local Timezone** — Your current location always shown at the top
 - ☀️🌙 **Day/Night Indicators** — Sun/moon icons based on local time (6am-6pm)
 - 🖥️ **Fullscreen Support** — Works above fullscreen apps like native Spotlight
+
+### Favorites
+- ⭐ **Favorite Cities** — Star cities to keep them pinned when not searching
+- 💾 **Persistent Storage** — Favorites saved automatically between sessions
+
+### Preferences
+- 🕐 **24/12 Hour Format** — Toggle between 24-hour (14:30) and 12-hour (2:30 PM) display
+- 🚀 **Launch at Login** — Automatically start Zonely when you log in
+- ⚙️ **Right-click Menu** — Quick access to About, Preferences, and Quit
+
+### Hidden Features
+- 🥚 **About Easter Egg** — Type "about" or "version" in search to see app info
+- 📤 **City Request** — Search for a missing city and request it via GitHub Issues
 
 ## Requirements
 
@@ -28,8 +42,8 @@ A native macOS menu bar app for quickly viewing world times with a Spotlight-sty
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/Zonly.git
-   cd Zonly
+   git clone https://github.com/shihabshaharia/Zonely.git
+   cd Zonely
    ```
 
 2. Build the project:
@@ -53,29 +67,37 @@ The binary will be located at `.build/release/Zonly`
 
 ## Usage
 
-| Action | Shortcut |
-|--------|----------|
-| Toggle Spotlight | `⌥ Option + Space` |
+| Action | Method |
+|--------|--------|
+| Toggle Spotlight | `⌥ Option + Space` or click menu bar icon |
 | Close Window | `Escape` or click outside |
 | Search | Just start typing |
 | Time Travel | Drag the slider |
 | Reset Time | Click ↺ button |
+| Add Favorite | Click + button on any city |
+| Remove Favorite | Click ★ button on favorited city |
+| Open Preferences | Right-click menu bar icon → Preferences |
+| Quit App | Right-click menu bar icon → Quit Zonely |
 
 ## Project Structure
 
 ```
-Zonly/
-├── Package.swift           # Swift Package Manager manifest
+Zonely/
+├── Package.swift              # Swift Package Manager manifest
 ├── Sources/
-│   ├── ZonlyMain.swift     # App entry point & AppDelegate
-│   ├── SpotlightWindow.swift   # Custom NSWindow for Spotlight UI
-│   ├── SpotlightView.swift     # Main SwiftUI view
-│   ├── MenuBarView.swift       # Legacy menu bar view
-│   ├── City.swift              # City data model
-│   ├── DataManager.swift       # JSON data loading
+│   ├── ZonlyMain.swift        # App entry point & AppDelegate
+│   ├── SpotlightWindow.swift  # Custom NSWindow for Spotlight UI
+│   ├── SpotlightView.swift    # Main SwiftUI view with search & city list
+│   ├── AboutView.swift        # Hidden About section
+│   ├── PreferencesView.swift  # Preferences window UI
+│   ├── City.swift             # City data model
+│   ├── DataManager.swift      # JSON data loading
+│   ├── PersistenceManager.swift # Favorites persistence
+│   ├── MenuBarView.swift      # Legacy menu bar view
 │   └── Resources/
-│       └── cities.json         # City timezone data
-└── .gitignore
+│       └── cities.json        # City timezone data (250+ cities)
+├── .gitignore
+└── README.md
 ```
 
 ## Adding Cities
@@ -93,9 +115,12 @@ Edit `Sources/Resources/cities.json` to add or modify cities:
 
 Timezone identifiers must be valid [IANA timezone names](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones).
 
+Or simply search for a missing city in the app and click "Request" to open a GitHub issue!
+
 ## Dependencies
 
 - [HotKey](https://github.com/soffes/HotKey) — Global keyboard shortcuts for macOS
+- [LaunchAtLogin](https://github.com/sindresorhus/LaunchAtLogin-Modern) — Launch at login functionality
 
 ## Permissions
 
@@ -117,4 +142,4 @@ MIT License - feel free to use and modify.
 
 ---
 
-Made with ❤️ using Swift & SwiftUI
+Made with ❤️ by [Shihab Shaharia](https://github.com/shihabshaharia)

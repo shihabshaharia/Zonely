@@ -447,7 +447,7 @@ struct EmptySearchStateView: View {
     private var requestURL: URL? {
         let encodedCity = cleanSearchText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let title = "Add city: \(cleanSearchText)".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        return URL(string: "https://github.com/shihabshaharia/Zonly/issues/new?title=\(title)&body=Please%20add%20the%20city%20\(encodedCity)%20to%20Zonly.")
+        return URL(string: "https://github.com/shihabshaharia/Zonely/issues/new?title=\(title)&body=Please%20add%20the%20city%20\(encodedCity)%20to%20Zonely.")
     }
     
     var body: some View {
