@@ -17,6 +17,7 @@ struct SpotlightView: View {
     @State private var detectedTimeLabel: String? = nil
     @State private var showAboutView = false
     @AppStorage("is24HourMode") private var is24HourMode = true
+    @StateObject private var updateManager = UpdateManager.shared
     @FocusState private var isSearchFocused: Bool
     
     private let timer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
@@ -265,8 +266,34 @@ struct SpotlightView: View {
                     .padding(.vertical, 8)
                 }
             }
+            
+            // Update Banner
+            if updateManager.isUpdateAvailable {
+                Button(action: { updateManager.openDownloadPage() }) {
+                    HStack {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 14))
+                        Text("New version \(updateManager.latestVersionFormatted) available. Click to download.")
+                            .font(.system(size: 12, weight: .medium))
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(
+                        LinearGradient(
+                            colors: [.blue, .purple],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .frame(width: 600, height: 480)
+        .frame(width: 600, height: updateManager.isUpdateAvailable ? 520 : 480)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(.ultraThinMaterial)

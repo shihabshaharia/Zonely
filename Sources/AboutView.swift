@@ -160,7 +160,7 @@ struct AboutView: View {
                 .foregroundColor(.primary)
             
             // Version
-            Text("Version 1.0.0")
+            Text("Version \(AppVersion.formatted)")
                 .font(.system(size: 14))
                 .foregroundColor(.secondary)
             

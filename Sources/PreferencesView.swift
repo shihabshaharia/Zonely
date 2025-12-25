@@ -3,6 +3,10 @@ import LaunchAtLogin
 
 struct PreferencesView: View {
     @AppStorage("is24HourMode") private var is24HourMode = true
+    @StateObject private var updateManager = UpdateManager.shared
+    @State private var showUpdateAlert = false
+    @State private var showErrorAlert = false
+    @State private var showUpToDateAlert = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -27,7 +31,7 @@ struct PreferencesView: View {
                     PreferencesRow(
                         icon: "power",
                         title: "Launch at Login",
-                        subtitle: "Start Zonly when you log in"
+                        subtitle: "Start Zonely when you log in"
                     ) {
                         LaunchAtLogin.Toggle("")
                             .toggleStyle(.switch)
@@ -36,24 +40,100 @@ struct PreferencesView: View {
                 }
             }
             
+            // Updates Section
+            PreferencesSection(icon: "arrow.triangle.2.circlepath", title: "Updates") {
+                VStack(spacing: 0) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "app.badge")
+                            .font(.system(size: 14))
+                            .foregroundColor(.blue)
+                            .frame(width: 20)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Current Version")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.primary)
+                            Text(AppVersion.formatted)
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        if updateManager.isChecking {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                        } else {
+                            Button("Check for Updates") {
+                                Task {
+                                    await updateManager.checkForUpdates()
+                                    handleUpdateResult()
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                }
+            }
+            
             Spacer()
             
             // Footer
             HStack {
-                Text("Zonly 1.0.0")
+                Text(AppVersion.fullDescription)
                     .font(.caption)
                     .foregroundColor(.secondary)
                 
                 Spacer()
                 
-                Link("GitHub", destination: URL(string: "https://github.com/shihabshaharia")!)
+                Link("GitHub", destination: URL(string: "https://github.com/shihabshaharia/Zonely")!)
                     .font(.caption)
                     .foregroundColor(.blue)
             }
             .padding(.horizontal, 4)
         }
         .padding(20)
-        .frame(width: 380, height: 280)
+        .frame(width: 380, height: 360)
+        .alert("Update Available", isPresented: $showUpdateAlert) {
+            if let url = updateManager.downloadURL {
+                Button("Download") {
+                    NSWorkspace.shared.open(url)
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+        } message: {
+            Text("\(updateManager.latestVersionFormatted) is available. Would you like to download it?")
+        }
+        .alert("You're Up to Date", isPresented: $showUpToDateAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("\(AppVersion.fullDescription) is the latest version.")
+        }
+        .alert("Update Check Failed", isPresented: $showErrorAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            if case .error(let message) = updateManager.result {
+                Text(message)
+            } else {
+                Text("Could not check for updates.")
+            }
+        }
+    }
+    
+    private func handleUpdateResult() {
+        guard let result = updateManager.result else { return }
+        
+        switch result {
+        case .updateAvailable:
+            showUpdateAlert = true
+        case .upToDate:
+            showUpToDateAlert = true
+        case .error:
+            showErrorAlert = true
+        }
     }
 }
 

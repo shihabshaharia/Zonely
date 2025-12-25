@@ -58,3 +58,8 @@ Pods/
 # Accio
 Dependencies/
 .accio/
+
+# Release Artifacts
+dist/
+*.zip
+*.dmg
