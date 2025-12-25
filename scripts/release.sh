@@ -56,11 +56,15 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
 </plist>
 EOF
 
-# 2. GENERATE COMPRESSED ZIP
+# 2. SIGN THE APP BUNDLE (Ad-Hoc Signature)
+echo "🔏 Applying Ad-Hoc Signature..."
+codesign --force --deep --sign - "$APP_BUNDLE"
+
+# 3. GENERATE COMPRESSED ZIP
 echo "🗜️  Generating ZIP..."
 (cd "$DIST_DIR" && zip -r -q "${APP_NAME}_v${VERSION}.zip" "$APP_NAME.app")
 
-# 3. GENERATE PROFESSIONAL DMG (Using dmgbuild)
+# 4. GENERATE PROFESSIONAL DMG (Using dmgbuild)
 echo "💿 Generating Professional DMG..."
 
 # Export variables for dmgbuild script

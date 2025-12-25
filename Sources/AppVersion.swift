@@ -4,7 +4,7 @@ import Foundation
 /// Update this single value when releasing new versions
 enum AppVersion {
     /// The current app version - SINGLE SOURCE OF TRUTH
-    static let current = "1.0.0"
+    static let current = "1.0.1"
     
     /// App display name
     static let displayName = "Zonely"
