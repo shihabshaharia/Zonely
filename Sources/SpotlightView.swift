@@ -127,6 +127,141 @@ struct SpotlightView: View {
         }
     }
     
+    /// Whether to show the update banner
+    private var shouldShowUpdateBanner: Bool {
+        switch updateManager.state {
+        case .available, .downloading, .readyToInstall, .installing:
+            return true
+        default:
+            return false
+        }
+    }
+    
+    /// Update banner view based on current state
+    @ViewBuilder
+    private var updateBannerView: some View {
+        switch updateManager.state {
+        case .available(let version):
+            // Available - show download button
+            Button(action: {
+                Task { await updateManager.downloadUpdate() }
+            }) {
+                HStack {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.system(size: 14))
+                    Text("New version \(AppVersion.format(version)) available")
+                        .font(.system(size: 12, weight: .medium))
+                    Spacer()
+                    Text("Download")
+                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.2))
+                        .clipShape(Capsule())
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(
+                    LinearGradient(
+                        colors: [.blue, .purple],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+            }
+            .buttonStyle(.plain)
+            
+        case .downloading(let progress):
+            // Downloading - show progress
+            VStack(spacing: 6) {
+                HStack {
+                    Image(systemName: "arrow.down.circle")
+                        .font(.system(size: 14))
+                    Text("Downloading update...")
+                        .font(.system(size: 12, weight: .medium))
+                    Spacer()
+                    Text("\(Int(progress * 100))%")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    Button("Cancel") {
+                        updateManager.cancelDownload()
+                    }
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white.opacity(0.7))
+                }
+                
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+                    .tint(.white)
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(
+                LinearGradient(
+                    colors: [.orange, .red],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            
+        case .readyToInstall:
+            // Ready - show install button
+            Button(action: {
+                updateManager.installUpdate()
+            }) {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14))
+                    Text("Update downloaded! Click to install & restart")
+                        .font(.system(size: 12, weight: .medium))
+                    Spacer()
+                    Text("Install")
+                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.2))
+                        .clipShape(Capsule())
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(
+                    LinearGradient(
+                        colors: [.green, .mint],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+            }
+            .buttonStyle(.plain)
+            
+        case .installing:
+            // Installing - show spinner
+            HStack {
+                ProgressView()
+                    .scaleEffect(0.7)
+                    .colorInvert()
+                Text("Installing update... App will restart shortly")
+                    .font(.system(size: 12, weight: .medium))
+                Spacer()
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(
+                LinearGradient(
+                    colors: [.green, .mint],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            
+        default:
+            EmptyView()
+        }
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
             // Search Field
@@ -268,32 +403,9 @@ struct SpotlightView: View {
             }
             
             // Update Banner
-            if updateManager.isUpdateAvailable {
-                Button(action: { updateManager.openDownloadPage() }) {
-                    HStack {
-                        Image(systemName: "arrow.down.circle.fill")
-                            .font(.system(size: 14))
-                        Text("New version \(updateManager.latestVersionFormatted) available. Click to download.")
-                            .font(.system(size: 12, weight: .medium))
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .semibold))
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(
-                        LinearGradient(
-                            colors: [.blue, .purple],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                }
-                .buttonStyle(.plain)
-            }
+            updateBannerView
         }
-        .frame(width: 600, height: updateManager.isUpdateAvailable ? 520 : 480)
+        .frame(width: 600, height: shouldShowUpdateBanner ? 520 : 480)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(.ultraThinMaterial)
@@ -330,6 +442,18 @@ struct CityRowWithFavorite: View {
     let is24HourMode: Bool
     let onToggleFavorite: () -> Void
     
+    @AppStorage("showAltTimeOnHover") private var showAltTimeOnHover = false
+    @State private var isHovering = false
+    
+    /// Current display time - switches format on hover if preference enabled
+    private var displayTime: String {
+        if showAltTimeOnHover && isHovering {
+            // Show alternate format when hovering
+            return city.currentTime(hourOffset: timeOffset, is24Hour: !is24HourMode)
+        }
+        return city.currentTime(hourOffset: timeOffset, is24Hour: is24HourMode)
+    }
+    
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
@@ -356,9 +480,17 @@ struct CityRowWithFavorite: View {
                     .font(.system(size: 14))
                     .foregroundColor(city.isDaytime(hourOffset: timeOffset) ? .yellow : .indigo)
                 
-                Text(city.currentTime(hourOffset: timeOffset, is24Hour: is24HourMode))
+                Text(displayTime)
                     .font(.system(size: 24, weight: .semibold, design: .monospaced))
                     .foregroundColor(timeOffset == 0 ? .primary : .blue)
+                    .frame(minWidth: showAltTimeOnHover ? 120 : nil, alignment: .trailing)
+                    .onHover { hovering in
+                        if showAltTimeOnHover {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                isHovering = hovering
+                            }
+                        }
+                    }
             }
         }
         .contentShape(Rectangle())
@@ -369,6 +501,16 @@ struct CityRow: View {
     let city: City
     let timeOffset: Double
     let is24HourMode: Bool
+    
+    @AppStorage("showAltTimeOnHover") private var showAltTimeOnHover = false
+    @State private var isHovering = false
+    
+    private var displayTime: String {
+        if showAltTimeOnHover && isHovering {
+            return city.currentTime(hourOffset: timeOffset, is24Hour: !is24HourMode)
+        }
+        return city.currentTime(hourOffset: timeOffset, is24Hour: is24HourMode)
+    }
     
     var body: some View {
         HStack {
@@ -388,9 +530,17 @@ struct CityRow: View {
                     .font(.system(size: 14))
                     .foregroundColor(city.isDaytime(hourOffset: timeOffset) ? .yellow : .indigo)
                 
-                Text(city.currentTime(hourOffset: timeOffset, is24Hour: is24HourMode))
+                Text(displayTime)
                     .font(.system(size: 24, weight: .semibold, design: .monospaced))
                     .foregroundColor(timeOffset == 0 ? .primary : .blue)
+                    .frame(minWidth: showAltTimeOnHover ? 120 : nil, alignment: .trailing)
+                    .onHover { hovering in
+                        if showAltTimeOnHover {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                isHovering = hovering
+                            }
+                        }
+                    }
             }
         }
         .contentShape(Rectangle())
@@ -400,6 +550,9 @@ struct CityRow: View {
 struct LocalTimeRow: View {
     let timeOffset: Double
     let is24HourMode: Bool
+    
+    @AppStorage("showAltTimeOnHover") private var showAltTimeOnHover = false
+    @State private var isHovering = false
     
     private var localTimezone: String {
         TimeZone.current.identifier
@@ -414,13 +567,6 @@ struct LocalTimeRow: View {
         return "Local"
     }
     
-    private var localTime: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = is24HourMode ? "HH:mm" : "h:mm a"
-        let offsetDate = Date().addingTimeInterval(timeOffset * 3600)
-        return formatter.string(from: offsetDate)
-    }
-    
     private var isLocalDaytime: Bool {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH"
@@ -429,6 +575,18 @@ struct LocalTimeRow: View {
             return hour >= 6 && hour < 18
         }
         return true
+    }
+    
+    /// Display time - switches format on hover if preference enabled
+    private var displayTime: String {
+        let formatter = DateFormatter()
+        if showAltTimeOnHover && isHovering {
+            formatter.dateFormat = is24HourMode ? "h:mm a" : "HH:mm"
+        } else {
+            formatter.dateFormat = is24HourMode ? "HH:mm" : "h:mm a"
+        }
+        let offsetDate = Date().addingTimeInterval(timeOffset * 3600)
+        return formatter.string(from: offsetDate)
     }
     
     var body: some View {
@@ -454,9 +612,17 @@ struct LocalTimeRow: View {
                     .font(.system(size: 14))
                     .foregroundColor(isLocalDaytime ? .yellow : .indigo)
                 
-                Text(localTime)
+                Text(displayTime)
                     .font(.system(size: 24, weight: .semibold, design: .monospaced))
                     .foregroundColor(timeOffset == 0 ? .primary : .blue)
+                    .frame(minWidth: showAltTimeOnHover ? 120 : nil, alignment: .trailing)
+                    .onHover { hovering in
+                        if showAltTimeOnHover {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                isHovering = hovering
+                            }
+                        }
+                    }
             }
         }
         .contentShape(Rectangle())

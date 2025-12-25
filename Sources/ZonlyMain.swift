@@ -99,13 +99,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func rebuildContextMenu() {
         contextMenu.removeAllItems()
         
-        // Update Available (if any)
-        if UpdateManager.shared.isUpdateAvailable {
-            let versionString = AppVersion.format(UpdateManager.shared.latestVersion)
-            let updateItem = NSMenuItem(title: "⬇️ Update Available (\(versionString))", action: #selector(openUpdatePage), keyEquivalent: "")
+        // Update status menu item (based on state)
+        switch UpdateManager.shared.state {
+        case .available(let version):
+            let updateItem = NSMenuItem(title: "⬇️ Download Update (\(AppVersion.format(version)))", action: #selector(downloadUpdate), keyEquivalent: "")
             updateItem.target = self
             contextMenu.addItem(updateItem)
             contextMenu.addItem(NSMenuItem.separator())
+            
+        case .downloading(let progress):
+            let progressPercent = Int(progress * 100)
+            let updateItem = NSMenuItem(title: "📥 Downloading... \(progressPercent)%", action: nil, keyEquivalent: "")
+            updateItem.isEnabled = false
+            contextMenu.addItem(updateItem)
+            
+            let cancelItem = NSMenuItem(title: "    Cancel Download", action: #selector(cancelDownload), keyEquivalent: "")
+            cancelItem.target = self
+            contextMenu.addItem(cancelItem)
+            contextMenu.addItem(NSMenuItem.separator())
+            
+        case .readyToInstall:
+            let updateItem = NSMenuItem(title: "✅ Install & Restart", action: #selector(installUpdate), keyEquivalent: "")
+            updateItem.target = self
+            contextMenu.addItem(updateItem)
+            contextMenu.addItem(NSMenuItem.separator())
+            
+        case .installing:
+            let updateItem = NSMenuItem(title: "🔄 Installing...", action: nil, keyEquivalent: "")
+            updateItem.isEnabled = false
+            contextMenu.addItem(updateItem)
+            contextMenu.addItem(NSMenuItem.separator())
+            
+        default:
+            break
         }
         
         // About Zonely
@@ -127,8 +153,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         contextMenu.addItem(quitItem)
     }
     
-    @objc func openUpdatePage() {
-        UpdateManager.shared.openDownloadPage()
+    @objc func downloadUpdate() {
+        Task {
+            await UpdateManager.shared.downloadUpdate()
+        }
+        // Open preferences to show download progress
+        showPreferences()
+    }
+    
+    @objc func cancelDownload() {
+        UpdateManager.shared.cancelDownload()
+    }
+    
+    @objc func installUpdate() {
+        UpdateManager.shared.installUpdate()
     }
     
     @objc func handleStatusBarClick() {
