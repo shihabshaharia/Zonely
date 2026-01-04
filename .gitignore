@@ -63,3 +63,6 @@ Dependencies/
 dist/
 *.zip
 *.dmg
+
+#agent
+.agent/

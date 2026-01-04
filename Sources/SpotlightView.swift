@@ -14,7 +14,10 @@ struct SpotlightView: View {
     @State private var favoriteCityIds: Set<String> = []
     @State private var currentDate = Date()
     @State private var timeOffset: Double = 0
+    @State private var baseTimeOffset: Double = 0  // The offset when time was first detected (for slider delta)
     @State private var detectedTimeLabel: String? = nil
+    @State private var detectedDate: Date? = nil
+    @State private var showConversion = false
     @State private var showAboutView = false
     @AppStorage("is24HourMode") private var is24HourMode = true
     @StateObject private var updateManager = UpdateManager.shared
@@ -28,6 +31,23 @@ struct SpotlightView: View {
         
         guard !text.isEmpty else { return result }
         
+        // First, try to parse 4-digit military time format (e.g., 1800 -> 18:00)
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        if let militaryTime = parseMilitaryTime(trimmed) {
+            result.detectedDate = militaryTime.date
+            
+            // Calculate EXACT offset in hours (including fractional hours for minutes)
+            // This preserves minute precision - e.g., typing "321" at 3:41 gives offset of -0.333... hours
+            let exactSecondsFromNow = militaryTime.date.timeIntervalSince(Date())
+            let exactHoursFromNow = exactSecondsFromNow / 3600
+            let clampedOffset = max(-12, min(12, exactHoursFromNow))
+            result.timeOffset = clampedOffset  // Don't round! Keep exact fractional hours
+            
+            // Remove the time portion from search text
+            result.citySearchText = trimmed.replacingOccurrences(of: militaryTime.matchedText, with: "").trimmingCharacters(in: .whitespaces)
+            return result
+        }
+        
         // Try to detect dates using NSDataDetector
         do {
             let detector = try NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue)
@@ -37,12 +57,12 @@ struct SpotlightView: View {
                 if let detectedDate = match.date {
                     result.detectedDate = detectedDate
                     
-                    // Calculate hours from now
+                    // Calculate exact hours from now (don't round - preserve minute precision)
                     let hoursFromNow = detectedDate.timeIntervalSince(Date()) / 3600
                     
                     // Clamp to -12 to +12 range
                     let clampedOffset = max(-12, min(12, hoursFromNow))
-                    result.timeOffset = clampedOffset.rounded()
+                    result.timeOffset = clampedOffset  // No rounding!
                     
                     // Remove the date portion from search text for city filtering
                     let matchRange = Range(match.range, in: text)!
@@ -54,6 +74,49 @@ struct SpotlightView: View {
         }
         
         return result
+    }
+    
+    /// Parse 4-digit military time format (e.g., "1800" -> 18:00, "0930" -> 09:30)
+    private func parseMilitaryTime(_ text: String) -> (date: Date, matchedText: String)? {
+        // Match 3-4 digit patterns that look like military time
+        let pattern = #"^(\d{3,4})$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil else {
+            return nil
+        }
+        
+        let timeString = text
+        var hour: Int
+        var minute: Int
+        
+        if timeString.count == 4 {
+            // Format: HHMM (e.g., 1800)
+            hour = Int(String(timeString.prefix(2))) ?? 0
+            minute = Int(String(timeString.suffix(2))) ?? 0
+        } else if timeString.count == 3 {
+            // Format: HMM (e.g., 930 -> 9:30)
+            hour = Int(String(timeString.prefix(1))) ?? 0
+            minute = Int(String(timeString.suffix(2))) ?? 0
+        } else {
+            return nil
+        }
+        
+        // Validate hour and minute
+        guard hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59 else {
+            return nil
+        }
+        
+        // Create date with today's date and the parsed time
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        components.hour = hour
+        components.minute = minute
+        components.second = 0
+        
+        guard let date = Calendar.current.date(from: components) else {
+            return nil
+        }
+        
+        return (date, timeString)
     }
     
     /// Get the user's local timezone identifier
@@ -115,15 +178,14 @@ struct SpotlightView: View {
     }
     
     var offsetLabel: String {
-        if let label = detectedTimeLabel {
-            return label
-        }
-        if timeOffset == 0 {
+        // Always show the normal offset format (+X hrs)
+        let offset = Int(timeOffset.rounded())
+        if offset == 0 {
             return "Now"
-        } else if timeOffset > 0 {
-            return "+\(Int(timeOffset)) hrs"
+        } else if offset > 0 {
+            return "+\(offset) hrs"
         } else {
-            return "\(Int(timeOffset)) hrs"
+            return "\(offset) hrs"
         }
     }
     
@@ -281,18 +343,24 @@ struct SpotlightView: View {
                         showAboutView = (lowercased == "about" || lowercased == "version")
                         
                         let parsed = parseSearchQuery(text: newValue)
-                        if let offset = parsed.timeOffset {
+                        if let offset = parsed.timeOffset, let date = parsed.detectedDate {
                             withAnimation(.easeInOut(duration: 0.3)) {
                                 timeOffset = offset
+                                baseTimeOffset = offset  // Store initial offset for slider delta calculation
+                                detectedDate = date
+                                showConversion = true
                             }
                             // Format the detected time
-                            if let date = parsed.detectedDate {
-                                let formatter = DateFormatter()
-                                formatter.dateFormat = "HH:mm"
-                                detectedTimeLabel = formatter.string(from: date)
-                            }
+                            let formatter = DateFormatter()
+                            formatter.dateFormat = "HH:mm"
+                            detectedTimeLabel = formatter.string(from: date)
                         } else {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showConversion = false
+                            }
                             detectedTimeLabel = nil
+                            detectedDate = nil
+                            baseTimeOffset = 0
                         }
                     }
                 
@@ -333,6 +401,14 @@ struct SpotlightView: View {
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 12)
+            
+            // Time Conversion Hero View (Spotlight-style result)
+            if showConversion, let date = detectedDate {
+                ConversionHeroView(inputTime: searchText, detectedDate: date, timeOffset: timeOffset, baseTimeOffset: baseTimeOffset)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
             
             Divider()
                 .padding(.horizontal, 12)
