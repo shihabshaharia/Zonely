@@ -104,7 +104,7 @@ struct ConversionHeroView: View {
                     .foregroundColor(showCopied ? .green : .secondary)
                     .frame(width: 32, height: 32)
                     .background(Color.white.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .clipShape(RoundedRectangle(cornerRadius: 32))
             }
             .buttonStyle(.plain)
             .help(showCopied ? "Copied!" : "Copy to clipboard")
