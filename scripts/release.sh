@@ -33,6 +33,7 @@ swift build -c release -Xswiftc -DRELEASE --product "$SCHEME_NAME" 2>&1 | grep -
 # Create .app Bundle
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 cp ".build/release/$SCHEME_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+cp "$PROJECT_ROOT/art/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 
 # Generate Info.plist
 cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
