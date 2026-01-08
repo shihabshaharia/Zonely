@@ -161,4 +161,4 @@ MIT License - feel free to use and modify.
 
 ---
 
-Made with ❤️ by [Shihab Shaharia](https://github.com/shihabshaharia)
+Made with ❤️ in 🇧🇩 Bangladesh by [Shihab Shaharia](https://github.com/shihabshaharia)
