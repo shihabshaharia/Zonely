@@ -133,9 +133,14 @@ struct SpotlightView: View {
         return (date, timeString)
     }
     
-    /// Get the user's local timezone identifier
+    /// Get the user's local timezone identifier (uses custom preference if set)
+    @AppStorage("customTimezone") private var customTimezone = ""
+    
     private var localTimezoneId: String {
-        TimeZone.current.identifier
+        if !customTimezone.isEmpty {
+            return customTimezone
+        }
+        return TimeZone.current.identifier
     }
     
     /// Check if the search results contain a city matching local timezone
@@ -477,6 +482,7 @@ struct SpotlightView: View {
                                 isFavorite: isFavorite(city),
                                 isSearching: !searchText.isEmpty,
                                 is24HourMode: is24HourMode,
+                                isLocalTimezone: city.timezone == localTimezoneId,
                                 onToggleFavorite: { toggleFavorite(city) }
                             )
                             .padding(.horizontal, 12)
@@ -530,6 +536,7 @@ struct CityRowWithFavorite: View {
     let isFavorite: Bool
     let isSearching: Bool
     let is24HourMode: Bool
+    let isLocalTimezone: Bool  // Hide favorite button for local timezone
     let onToggleFavorite: () -> Void
     
     @AppStorage("showAltTimeOnHover") private var showAltTimeOnHover = false
@@ -558,13 +565,15 @@ struct CityRowWithFavorite: View {
             Spacer()
             
             HStack(spacing: 12) {
-                // Favorite toggle button (show when searching or hovering)
-                Button(action: onToggleFavorite) {
-                    Image(systemName: isFavorite ? "star.fill" : "plus.circle")
-                        .font(.system(size: 16))
-                        .foregroundColor(isFavorite ? .yellow : .blue)
+                // Favorite toggle button (hide for local timezone - always pinned at top)
+                if !isLocalTimezone {
+                    Button(action: onToggleFavorite) {
+                        Image(systemName: isFavorite ? "star.fill" : "plus.circle")
+                            .font(.system(size: 16))
+                            .foregroundColor(isFavorite ? .yellow : .blue)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
                 
                 Image(systemName: city.isDaytime(hourOffset: timeOffset) ? "sun.max.fill" : "moon.fill")
                     .font(.system(size: 14))
