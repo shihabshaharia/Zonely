@@ -37,11 +37,22 @@ struct ConversionHeroView: View {
                trimmed.allSatisfy { $0.isNumber }
     }
     
+    /// Detect if the input is a math expression (e.g., "+ 2h", "now + 30m")
+    private var inputIsMathExpression: Bool {
+        let lowercased = inputTime.lowercased()
+        let hasOperator = lowercased.contains("+") || lowercased.contains("-")
+        let hasUnit = lowercased.contains("h") || lowercased.contains("m")
+        return hasOperator && hasUnit
+    }
+    
     /// The converted time string (opposite format of input)
     /// Updates with slider movement
     private var convertedTime: String {
         let formatter = DateFormatter()
-        if inputIs12HourFormat {
+        if inputIsMathExpression {
+            // Math expressions always output 12hr format
+            formatter.dateFormat = "h:mm a"
+        } else if inputIs12HourFormat {
             // Input is 12hr, output 24hr
             formatter.dateFormat = "HH:mm"
         } else {
@@ -51,9 +62,44 @@ struct ConversionHeroView: View {
         return formatter.string(from: displayedDate)
     }
     
+    /// Day context label for math expressions (Tomorrow, Coming Friday, Jan 28, etc.)
+    private var dayContextLabel: String? {
+        guard inputIsMathExpression else { return nil }
+        
+        let calendar = Calendar.current
+        let dayComponents = calendar.dateComponents([.day], from: calendar.startOfDay(for: Date()), to: calendar.startOfDay(for: displayedDate))
+        let dayDiff = dayComponents.day ?? 0
+        
+        // Same day - no context needed
+        if dayDiff == 0 { return nil }
+        
+        // Tomorrow or Yesterday
+        if dayDiff == 1 { return "Tomorrow" }
+        if dayDiff == -1 { return "Yesterday" }
+        
+        // 2-6 days - show day name with Coming/Last
+        if dayDiff >= 2 && dayDiff <= 6 {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE"
+            return "Coming \(formatter.string(from: displayedDate))"
+        }
+        if dayDiff >= -6 && dayDiff <= -2 {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE"
+            return "Last \(formatter.string(from: displayedDate))"
+        }
+        
+        // 7+ days - show date
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter.string(from: displayedDate)
+    }
+    
     /// Label describing the conversion direction
     private var conversionLabel: String {
-        if inputIs12HourFormat {
+        if inputIsMathExpression {
+            return "Calculated time"
+        } else if inputIs12HourFormat {
             return "24-hour format"
         } else {
             return "12-hour format"
@@ -92,10 +138,19 @@ struct ConversionHeroView: View {
             
             Spacer()
             
-            // Center/Right: The converted time result
-            Text(convertedTime)
-                .font(.system(size: 32, weight: .bold, design: .rounded))
-                .foregroundColor(.primary)
+            // Center/Right: The converted time result with optional day context
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(convertedTime)
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .foregroundColor(.primary)
+                
+                // Day context shown smaller below (only for math expressions)
+                if let dayContext = dayContextLabel {
+                    Text(dayContext)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.blue)
+                }
+            }
             
             // Right: Copy button
             Button(action: copyToClipboard) {

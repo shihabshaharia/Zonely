@@ -31,8 +31,22 @@ struct SpotlightView: View {
         
         guard !text.isEmpty else { return result }
         
-        // First, try to parse 4-digit military time format (e.g., 1800 -> 18:00)
         let trimmed = text.trimmingCharacters(in: .whitespaces)
+        
+        // First, try to parse math expressions (e.g., "+ 2h", "now + 30m", "14:00 - 1h")
+        if let timeResult = TimeConverter.parseTimeExpression(trimmed) {
+            result.detectedDate = timeResult.calculatedDate
+            
+            // Calculate offset from now
+            let exactSecondsFromNow = timeResult.calculatedDate.timeIntervalSince(Date())
+            let exactHoursFromNow = exactSecondsFromNow / 3600
+            let clampedOffset = max(-12, min(12, exactHoursFromNow))
+            result.timeOffset = clampedOffset
+            result.citySearchText = ""  // Math expressions don't filter cities
+            return result
+        }
+        
+        // Try to parse 4-digit military time format (e.g., 1800 -> 18:00)
         if let militaryTime = parseMilitaryTime(trimmed) {
             result.detectedDate = militaryTime.date
             
