@@ -37,11 +37,11 @@ struct ConversionHeroView: View {
                trimmed.allSatisfy { $0.isNumber }
     }
     
-    /// Detect if the input is a math expression (e.g., "+ 2h", "now + 30m")
+    /// Detect if the input is a math expression (e.g., "+ 2h", "now + 30m", "+ 3d")
     private var inputIsMathExpression: Bool {
         let lowercased = inputTime.lowercased()
         let hasOperator = lowercased.contains("+") || lowercased.contains("-")
-        let hasUnit = lowercased.contains("h") || lowercased.contains("m")
+        let hasUnit = lowercased.contains("h") || lowercased.contains("m") || lowercased.contains("d")
         return hasOperator && hasUnit
     }
     

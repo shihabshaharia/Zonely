@@ -197,14 +197,37 @@ struct SpotlightView: View {
     }
     
     var offsetLabel: String {
-        // Always show the normal offset format (+X hrs)
-        let offset = Int(timeOffset.rounded())
-        if offset == 0 {
+        // Use actual offset from detectedDate (not clamped slider value)
+        guard let detected = detectedDate else {
+            // Fallback to slider offset if no detected date
+            let offset = Int(timeOffset.rounded())
+            if offset == 0 { return "Now" }
+            return offset > 0 ? "+\(offset)h" : "\(offset)h"
+        }
+        
+        // Calculate true offset from now in hours
+        let hoursFromNow = detected.timeIntervalSince(Date()) / 3600
+        
+        if abs(hoursFromNow) < 0.1 {
             return "Now"
-        } else if offset > 0 {
-            return "+\(offset) hrs"
+        }
+        
+        // Use days if ≥24 hours, otherwise hours
+        if abs(hoursFromNow) >= 24 {
+            let days = hoursFromNow / 24
+            if days == days.rounded() {
+                // Whole days
+                let d = Int(days)
+                return d > 0 ? "+\(d)d" : "\(d)d"
+            } else {
+                // Fractional days - show as hours
+                let h = Int(hoursFromNow.rounded())
+                return h > 0 ? "+\(h)h" : "\(h)h"
+            }
         } else {
-            return "\(offset) hrs"
+            let h = Int(hoursFromNow.rounded())
+            if h == 0 { return "Now" }
+            return h > 0 ? "+\(h)h" : "\(h)h"
         }
     }
     
@@ -376,6 +399,7 @@ struct SpotlightView: View {
                         } else {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 showConversion = false
+                                timeOffset = 0  // Reset slider to "Now" when text is cleared
                             }
                             detectedTimeLabel = nil
                             detectedDate = nil

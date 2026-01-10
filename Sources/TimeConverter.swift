@@ -12,17 +12,17 @@ struct TimeConverter {
     }
     
     /// Parse time expressions with optional math operations
-    /// Supports: "+ 2h", "now + 2h", "14:00 - 30m", "5pm + 1.5hrs"
+    /// Supports: "+ 2h", "now + 2h", "14:00 - 30m", "5pm + 1.5hrs", "+ 3d", "now + 7days"
     static func parseTimeExpression(_ text: String) -> TimeResult? {
         let trimmed = text.trimmingCharacters(in: .whitespaces).lowercased()
         
         guard !trimmed.isEmpty else { return nil }
         
         // Pattern: optional base time + operator + duration
-        // Examples: "+ 2h", "now + 30m", "14:00 - 1h", "5pm + 1.5hrs"
+        // Examples: "+ 2h", "now + 30m", "14:00 - 1h", "5pm + 1.5hrs", "+ 3d", "now + 7days"
         
         // Regex to match: [optional time] [+/-] [number][unit]
-        let pattern = #"^(.*?)\s*([+\-])\s*(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|m|min|mins|minute|minutes)$"#
+        let pattern = #"^(.*?)\s*([+\-])\s*(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|m|min|mins|minute|minutes|d|day|days)$"#
         
         guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
               let match = regex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)) else {
@@ -56,9 +56,14 @@ struct TimeConverter {
         
         // Calculate offset in seconds
         var offsetSeconds: Double
-        if unit.hasPrefix("h") {
+        if unit.hasPrefix("d") {
+            // Days: 86400 seconds per day
+            offsetSeconds = value * 86400
+        } else if unit.hasPrefix("h") {
+            // Hours: 3600 seconds per hour
             offsetSeconds = value * 3600
         } else {
+            // Minutes: 60 seconds per minute
             offsetSeconds = value * 60
         }
         
