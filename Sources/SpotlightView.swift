@@ -19,6 +19,10 @@ struct SpotlightView: View {
     @State private var detectedDate: Date? = nil
     @State private var showConversion = false
     @State private var showAboutView = false
+    @State private var selectedCity: City? = nil  // Selected city token for remote time
+    @State private var isShowingCitySuggestions = false  // Show city suggestions on @ trigger
+    @State private var previousSearchText = ""  // For backspace detection
+    @State private var highlightedCityIndex = 0  // Index of highlighted city in @ suggestions
     @AppStorage("is24HourMode") private var is24HourMode = true
     @StateObject private var updateManager = UpdateManager.shared
     @FocusState private var isSearchFocused: Bool
@@ -143,6 +147,77 @@ struct SpotlightView: View {
         return TimeZone.current.identifier
     }
     
+    /// Parse time input relative to a specific city's timezone
+    /// Returns the date in absolute terms (for display) and the offset from now
+    func parseTimeForCity(_ timeText: String, city: City) -> (date: Date, offset: Double)? {
+        guard !timeText.isEmpty else { return nil }
+        
+        let trimmed = timeText.trimmingCharacters(in: .whitespaces).lowercased()
+        
+        // Try to parse time formats like "4pm", "16:00", "9:30 am"
+        guard let parsedTime = parseTimeOnly(trimmed) else { return nil }
+        
+        // Get the city's timezone
+        guard let cityTimeZone = TimeZone(identifier: city.timezone),
+              let _ = TimeZone(identifier: localTimezoneId) else {
+            return nil
+        }
+        
+        // Create a date in the city's timezone
+        var calendar = Calendar.current
+        calendar.timeZone = cityTimeZone
+        
+        var components = calendar.dateComponents([.year, .month, .day], from: Date())
+        components.hour = parsedTime.hour
+        components.minute = parsedTime.minute
+        components.second = 0
+        
+        guard let dateInCityTZ = calendar.date(from: components) else { return nil }
+        
+        // Calculate offset from now in hours
+        let secondsFromNow = dateInCityTZ.timeIntervalSince(Date())
+        let hoursFromNow = secondsFromNow / 3600
+        let clampedOffset = max(-12, min(12, hoursFromNow))
+        
+        return (dateInCityTZ, clampedOffset)
+    }
+    
+    /// Parse time-only strings like "4pm", "16:00", "9:30 am"
+    private func parseTimeOnly(_ text: String) -> (hour: Int, minute: Int)? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces).lowercased()
+        
+        // Try various date formats
+        let formats = ["h:mm a", "h:mma", "ha", "h a", "HH:mm", "H:mm"]
+        
+        for format in formats {
+            let formatter = DateFormatter()
+            formatter.dateFormat = format
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            if let date = formatter.date(from: trimmed) {
+                let cal = Calendar.current
+                return (cal.component(.hour, from: date), cal.component(.minute, from: date))
+            }
+        }
+        
+        // Try regex for simple patterns like "4pm", "9am"
+        let simplePattern = #"^(\d{1,2})\s*(am|pm)$"#
+        if let regex = try? NSRegularExpression(pattern: simplePattern, options: .caseInsensitive),
+           let match = regex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)) {
+            if let hourRange = Range(match.range(at: 1), in: trimmed),
+               let ampmRange = Range(match.range(at: 2), in: trimmed) {
+                var hour = Int(String(trimmed[hourRange])) ?? 0
+                let ampm = String(trimmed[ampmRange]).lowercased()
+                
+                if ampm == "pm" && hour != 12 { hour += 12 }
+                if ampm == "am" && hour == 12 { hour = 0 }
+                
+                return (hour, 0)
+            }
+        }
+        
+        return nil
+    }
+    
     /// Check if the search results contain a city matching local timezone
     var searchResultsContainLocalCity: Bool {
         let parsed = parseSearchQuery(text: searchText)
@@ -162,7 +237,35 @@ struct SpotlightView: View {
     /// Cities to display based on search or favorites
     var displayCities: [City] {
         let parsed = parseSearchQuery(text: searchText)
-        let searchString = parsed.citySearchText
+        var searchString = parsed.citySearchText
+        
+        // Handle @ for city suggestions (can be anywhere in text, e.g., "4pm @lon")
+        if isShowingCitySuggestions && searchText.contains("@") {
+            // Extract the text after @ as the city query
+            let parts = searchText.components(separatedBy: "@")
+            guard parts.count > 1 else {
+                return allCities.filter { $0.timezone != localTimezoneId }
+            }
+            
+            // Use the ENTIRE text after @ as the city query (e.g., "new d" from "@new d")
+            let afterAt = parts[1].trimmingCharacters(in: .whitespaces)
+            searchString = afterAt
+            
+            if searchString.isEmpty {
+                // Just "@" or "4pm @" - show all cities except local timezone
+                return allCities.filter { $0.timezone != localTimezoneId }
+            }
+            
+            // Filter by the query after @, excluding local timezone city
+            let lowercasedSearch = searchString.lowercased()
+            return allCities.filter { city in
+                city.timezone != localTimezoneId && (
+                    city.city.lowercased().contains(lowercasedSearch) ||
+                    city.country.lowercased().contains(lowercasedSearch) ||
+                    city.keywords.contains { $0.lowercased().contains(lowercasedSearch) }
+                )
+            }
+        }
         
         if searchString.isEmpty {
             // Show favorites when not searching (exclude local timezone city since LocalTimeRow handles it)
@@ -193,6 +296,46 @@ struct SpotlightView: View {
         } else {
             favoriteCityIds.insert(city.id)
             PersistenceManager.shared.addFavorite(cityId: city.id)
+        }
+    }
+    
+    /// Select a city as the token (from @ suggestions)
+    /// Preserves any time text that was typed alongside the @ query
+    func selectCity(_ city: City) {
+        // Extract any time text before/after the @ query
+        // Examples: "4pm @lon" → "4pm", "@london 9am" → "9am", "2:30pm @new d" → "2:30pm"
+        var preservedText = ""
+        
+        if searchText.contains("@") {
+            // Split by @ and reconstruct without the query part
+            let parts = searchText.components(separatedBy: "@")
+            
+            // Part before @ (e.g., "4pm " from "4pm @london")
+            let beforeAt = parts[0].trimmingCharacters(in: .whitespaces)
+            
+            // Part after @ - remove the city query portion
+            if parts.count > 1 {
+                let afterAt = parts[1].trimmingCharacters(in: .whitespaces)
+                // The afterAt contains the city query, we need to remove it
+                // Find where the city query ends (it's followed by potential time text)
+                let queryParts = afterAt.components(separatedBy: " ")
+                // Skip the first word (city query) and keep the rest
+                if queryParts.count > 1 {
+                    let remainingParts = queryParts.dropFirst().joined(separator: " ")
+                    preservedText = [beforeAt, remainingParts].filter { !$0.isEmpty }.joined(separator: " ")
+                } else {
+                    preservedText = beforeAt
+                }
+            } else {
+                preservedText = beforeAt
+            }
+        }
+        
+        withAnimation(.easeInOut(duration: 0.2)) {
+            selectedCity = city
+            searchText = preservedText.trimmingCharacters(in: .whitespaces)
+            isShowingCitySuggestions = false
+            highlightedCityIndex = 0
         }
     }
     
@@ -368,47 +511,119 @@ struct SpotlightView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Search Field
+            // Search Field with City Token support
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 20, weight: .medium))
                     .foregroundColor(.secondary)
                 
-                TextField("Search cities, times (e.g. '5pm', 'tomorrow')...", text: $searchText)
+                // City Token (if selected)
+                if let city = selectedCity {
+                    CityTokenView(cityName: city.city) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectedCity = nil
+                            isShowingCitySuggestions = false
+                        }
+                    }
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .leading).combined(with: .opacity),
+                        removal: .opacity
+                    ))
+                }
+                
+                TextField(selectedCity != nil ? "Enter time (e.g. '4pm')..." : "Search cities, times, or type @ for city...", text: $searchText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 22, weight: .light))
+                    .font(.system(size: selectedCity != nil ? 18 : 22, weight: .light))
                     .foregroundColor(.primary)
                     .focused($isSearchFocused)
                     .onChange(of: searchText) { _, newValue in
+                        // Detect @ trigger for city suggestions (can be anywhere in text, e.g., "4pm @lon")
+                        if newValue.contains("@") && selectedCity == nil {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isShowingCitySuggestions = true
+                                highlightedCityIndex = 0  // Auto-highlight first result
+                            }
+                        } else if !newValue.contains("@") {
+                            isShowingCitySuggestions = false
+                            highlightedCityIndex = 0
+                        }
+                        
+                        // Detect backspace on empty field to remove city token
+                        if newValue.isEmpty && previousSearchText.isEmpty && selectedCity != nil {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                selectedCity = nil
+                                isShowingCitySuggestions = false
+                            }
+                        }
+                        previousSearchText = newValue
+                        
                         // Check for hidden About trigger
                         let lowercased = newValue.lowercased().trimmingCharacters(in: .whitespaces)
                         showAboutView = (lowercased == "about" || lowercased == "version")
                         
-                        let parsed = parseSearchQuery(text: newValue)
-                        if let offset = parsed.timeOffset, let date = parsed.detectedDate {
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                timeOffset = offset
-                                baseTimeOffset = offset  // Store initial offset for slider delta calculation
-                                detectedDate = date
-                                showConversion = true
+                        // Parse time with selected city context
+                        if let city = selectedCity {
+                            // Parse time relative to selected city's timezone
+                            let timeOnly = newValue.trimmingCharacters(in: .whitespaces)
+                            if let result = parseTimeForCity(timeOnly, city: city) {
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    timeOffset = result.offset
+                                    baseTimeOffset = result.offset
+                                    detectedDate = result.date
+                                    showConversion = true
+                                }
+                                let formatter = DateFormatter()
+                                formatter.dateFormat = "HH:mm"
+                                detectedTimeLabel = formatter.string(from: result.date)
+                            } else {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    showConversion = false
+                                    timeOffset = 0
+                                }
+                                detectedTimeLabel = nil
+                                detectedDate = nil
+                                baseTimeOffset = 0
                             }
-                            // Format the detected time
-                            let formatter = DateFormatter()
-                            formatter.dateFormat = "HH:mm"
-                            detectedTimeLabel = formatter.string(from: date)
-                        } else {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                showConversion = false
-                                timeOffset = 0  // Reset slider to "Now" when text is cleared
+                        } else if !isShowingCitySuggestions {
+                            // Standard parsing (no city selected)
+                            let parsed = parseSearchQuery(text: newValue)
+                            if let offset = parsed.timeOffset, let date = parsed.detectedDate {
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    timeOffset = offset
+                                    baseTimeOffset = offset
+                                    detectedDate = date
+                                    showConversion = true
+                                }
+                                let formatter = DateFormatter()
+                                formatter.dateFormat = "HH:mm"
+                                detectedTimeLabel = formatter.string(from: date)
+                            } else {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    showConversion = false
+                                    timeOffset = 0
+                                }
+                                detectedTimeLabel = nil
+                                detectedDate = nil
+                                baseTimeOffset = 0
                             }
-                            detectedTimeLabel = nil
-                            detectedDate = nil
-                            baseTimeOffset = 0
+                        }
+                    }
+                    .onSubmit {
+                        // Enter key pressed - select highlighted city if in @ mode
+                        if isShowingCitySuggestions {
+                            let cities = displayCities
+                            if highlightedCityIndex < cities.count {
+                                selectCity(cities[highlightedCityIndex])
+                            }
                         }
                     }
                 
-                if !searchText.isEmpty {
-                    Button(action: { searchText = "" }) {
+                if !searchText.isEmpty || selectedCity != nil {
+                    Button(action: { 
+                        searchText = ""
+                        selectedCity = nil
+                        isShowingCitySuggestions = false
+                    }) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 16))
                             .foregroundColor(.secondary)
@@ -487,38 +702,66 @@ struct SpotlightView: View {
                     }
                 }
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        // User's Local Time (hide when search results contain local city to avoid duplicate)
-                        if !searchResultsContainLocalCity {
-                            LocalTimeRow(timeOffset: timeOffset, is24HourMode: is24HourMode)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                            
-                            Divider()
-                                .padding(.horizontal, 20)
-                        }
-                        
-                        ForEach(displayCities) { city in
-                            CityRowWithFavorite(
-                                city: city,
-                                timeOffset: timeOffset,
-                                isFavorite: isFavorite(city),
-                                isSearching: !searchText.isEmpty,
-                                is24HourMode: is24HourMode,
-                                isLocalTimezone: city.timezone == localTimezoneId,
-                                onToggleFavorite: { toggleFavorite(city) }
-                            )
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            
-                            if city.id != displayCities.last?.id {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            // User's Local Time (hide when search results contain local city to avoid duplicate)
+                            if !searchResultsContainLocalCity {
+                                LocalTimeRow(timeOffset: timeOffset, is24HourMode: is24HourMode)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                
                                 Divider()
                                     .padding(.horizontal, 20)
                             }
+                            
+                            ForEach(Array(displayCities.enumerated()), id: \.element.id) { index, city in
+                                CityRowWithFavorite(
+                                    city: city,
+                                    timeOffset: timeOffset,
+                                    isFavorite: isFavorite(city),
+                                    isSearching: !searchText.isEmpty,
+                                    is24HourMode: is24HourMode,
+                                    isLocalTimezone: city.timezone == localTimezoneId,
+                                    onToggleFavorite: { toggleFavorite(city) }
+                                )
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(
+                                    // Highlight background when in @ mode and this is the selected index
+                                    isShowingCitySuggestions && index == highlightedCityIndex
+                                        ? Color.blue.opacity(0.2)
+                                        : Color.clear
+                                )
+                                .cornerRadius(8)
+                                .contentShape(Rectangle())
+                                .id(city.id)  // For ScrollViewReader scrollTo
+                                .onTapGesture {
+                                    // If in @ mode, select this city as the token
+                                    if isShowingCitySuggestions {
+                                        selectCity(city)
+                                    }
+                                }
+                                
+                                if city.id != displayCities.last?.id {
+                                    Divider()
+                                        .padding(.horizontal, 20)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 8)
+                    }
+                    .onChange(of: highlightedCityIndex) { _, newIndex in
+                        // Auto-scroll to highlighted city when navigating with keyboard
+                        if isShowingCitySuggestions {
+                            let cities = displayCities
+                            if newIndex < cities.count {
+                                withAnimation(.easeInOut(duration: 0.15)) {
+                                    proxy.scrollTo(cities[newIndex].id, anchor: .center)
+                                }
+                            }
                         }
                     }
-                    .padding(.vertical, 8)
                 }
             }
             
@@ -542,6 +785,28 @@ struct SpotlightView: View {
             // Focus the search field after a brief delay
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 isSearchFocused = true
+            }
+            
+            // Add keyboard event monitor for arrow key navigation
+            NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                if self.isShowingCitySuggestions {
+                    let cities = self.displayCities
+                    switch event.keyCode {
+                    case 125:  // Down arrow
+                        if self.highlightedCityIndex < cities.count - 1 {
+                            self.highlightedCityIndex += 1
+                        }
+                        return nil  // Consume the event
+                    case 126:  // Up arrow
+                        if self.highlightedCityIndex > 0 {
+                            self.highlightedCityIndex -= 1
+                        }
+                        return nil  // Consume the event
+                    default:
+                        break
+                    }
+                }
+                return event
             }
         }
         .onReceive(timer) { _ in
@@ -801,6 +1066,34 @@ struct EmptySearchStateView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.vertical, 40)
+    }
+}
+
+// MARK: - City Token View
+/// A blue capsule chip showing the selected city with an X to remove
+struct CityTokenView: View {
+    let cityName: String
+    let onRemove: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(cityName)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.white)
+            
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.8))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(Color.blue)
+        )
     }
 }
 
