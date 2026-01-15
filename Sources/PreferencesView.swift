@@ -5,6 +5,7 @@ struct PreferencesView: View {
     @AppStorage("is24HourMode") private var is24HourMode = true
     @AppStorage("showAltTimeOnHover") private var showAltTimeOnHover = false
     @AppStorage("customTimezone") private var customTimezone = ""
+    @AppStorage("backspaceRemovesToken") private var backspaceRemovesToken = true
     @StateObject private var updateManager = UpdateManager.shared
     @State private var selectedTab = 0
     @State private var showTimezonePicker = false
@@ -122,6 +123,13 @@ struct PreferencesView: View {
                         .font(.caption).foregroundColor(.blue)
                     Spacer()
                 }
+            }
+            
+            Divider().padding(.vertical, 4)
+            
+            // Behavior
+            settingRow(icon: "delete.left", title: "Backspace Removes Tag", subtitle: "Clear city token with backspace") {
+                Toggle("", isOn: $backspaceRemovesToken).toggleStyle(.switch).labelsHidden()
             }
             
             Divider().padding(.vertical, 4)

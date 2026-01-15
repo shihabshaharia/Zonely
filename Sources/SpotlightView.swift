@@ -24,6 +24,7 @@ struct SpotlightView: View {
     @State private var previousSearchText = ""  // For backspace detection
     @State private var highlightedCityIndex = 0  // Index of highlighted city in @ suggestions
     @AppStorage("is24HourMode") private var is24HourMode = true
+    @AppStorage("backspaceRemovesToken") private var backspaceRemovesToken = true
     @StateObject private var updateManager = UpdateManager.shared
     @FocusState private var isSearchFocused: Bool
     
@@ -218,6 +219,67 @@ struct SpotlightView: View {
         return nil
     }
     
+    /// Handle search text changes - extracted to reduce body complexity
+    private func handleTimeParsingForCity(_ text: String, city: City) {
+        let timeOnly = text.trimmingCharacters(in: .whitespaces)
+        
+        // If text is empty, show the city's current time
+        if timeOnly.isEmpty {
+            if let cityTZ = TimeZone(identifier: city.timezone) {
+                // Show "now" in the city's timezone
+                let now = Date()
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    timeOffset = 0
+                    baseTimeOffset = 0
+                    detectedDate = now
+                    showConversion = true
+                }
+                let formatter = DateFormatter()
+                formatter.dateFormat = "HH:mm"
+                formatter.timeZone = cityTZ
+                detectedTimeLabel = formatter.string(from: now)
+            }
+            return
+        }
+        
+        // First try parsing as a direct time (e.g., "4pm")
+        if let result = parseTimeForCity(timeOnly, city: city) {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                timeOffset = result.offset
+                baseTimeOffset = result.offset
+                detectedDate = result.date
+                showConversion = true
+            }
+            let formatter = DateFormatter()
+            formatter.dateFormat = "HH:mm"
+            detectedTimeLabel = formatter.string(from: result.date)
+        }
+        // Fallback: try math expressions (e.g., "+4h", "now + 2h")
+        else if let mathResult = TimeConverter.parseTimeExpression(timeOnly) {
+            // Calculate offset from now
+            let hoursFromNow = mathResult.calculatedDate.timeIntervalSince(Date()) / 3600
+            let clampedOffset = max(-12, min(12, hoursFromNow))
+            
+            withAnimation(.easeInOut(duration: 0.3)) {
+                timeOffset = clampedOffset
+                baseTimeOffset = clampedOffset
+                detectedDate = mathResult.calculatedDate
+                showConversion = true
+            }
+            let formatter = DateFormatter()
+            formatter.dateFormat = "HH:mm"
+            detectedTimeLabel = formatter.string(from: mathResult.calculatedDate)
+        } else {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showConversion = false
+                timeOffset = 0
+            }
+            detectedTimeLabel = nil
+            detectedDate = nil
+            baseTimeOffset = 0
+        }
+    }
+    
     /// Check if the search results contain a city matching local timezone
     var searchResultsContainLocalCity: Bool {
         let parsed = parseSearchQuery(text: searchText)
@@ -301,7 +363,7 @@ struct SpotlightView: View {
     
     /// Select a city as the token (from @ suggestions)
     /// Preserves any time text that was typed alongside the @ query
-    func selectCity(_ city: City) {
+    private func selectCity(_ city: City) {
         // Extract any time text before/after the @ query
         // Examples: "4pm @lon" → "4pm", "@london 9am" → "9am", "2:30pm @new d" → "2:30pm"
         var preservedText = ""
@@ -337,6 +399,9 @@ struct SpotlightView: View {
             isShowingCitySuggestions = false
             highlightedCityIndex = 0
         }
+        
+        // Trigger parsing to show the city's current time in hero view
+        handleTimeParsingForCity(preservedText, city: city)
     }
     
     var offsetLabel: String {
@@ -563,27 +628,8 @@ struct SpotlightView: View {
                         
                         // Parse time with selected city context
                         if let city = selectedCity {
-                            // Parse time relative to selected city's timezone
-                            let timeOnly = newValue.trimmingCharacters(in: .whitespaces)
-                            if let result = parseTimeForCity(timeOnly, city: city) {
-                                withAnimation(.easeInOut(duration: 0.3)) {
-                                    timeOffset = result.offset
-                                    baseTimeOffset = result.offset
-                                    detectedDate = result.date
-                                    showConversion = true
-                                }
-                                let formatter = DateFormatter()
-                                formatter.dateFormat = "HH:mm"
-                                detectedTimeLabel = formatter.string(from: result.date)
-                            } else {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    showConversion = false
-                                    timeOffset = 0
-                                }
-                                detectedTimeLabel = nil
-                                detectedDate = nil
-                                baseTimeOffset = 0
-                            }
+                            // Use the centralized handler that properly handles empty text
+                            handleTimeParsingForCity(newValue, city: city)
                         } else if !isShowingCitySuggestions {
                             // Standard parsing (no city selected)
                             let parsed = parseSearchQuery(text: newValue)
@@ -662,7 +708,7 @@ struct SpotlightView: View {
             
             // Time Conversion Hero View (Spotlight-style result)
             if showConversion, let date = detectedDate {
-                ConversionHeroView(inputTime: searchText, detectedDate: date, timeOffset: timeOffset, baseTimeOffset: baseTimeOffset)
+                ConversionHeroView(inputTime: searchText, detectedDate: date, timeOffset: timeOffset, baseTimeOffset: baseTimeOffset, selectedCity: selectedCity, localTimezoneId: localTimezoneId)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 12)
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -787,8 +833,21 @@ struct SpotlightView: View {
                 isSearchFocused = true
             }
             
-            // Add keyboard event monitor for arrow key navigation
+            // Add keyboard event monitor for arrow key navigation and backspace
             NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                // Handle backspace to remove city token when text field is empty
+                // Only if enabled in preferences
+                if event.keyCode == 51 && self.backspaceRemovesToken {  // Backspace key
+                    if self.searchText.isEmpty && self.selectedCity != nil {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            self.selectedCity = nil
+                            self.isShowingCitySuggestions = false
+                            self.showConversion = false
+                        }
+                        return nil  // Consume the event
+                    }
+                }
+                
                 if self.isShowingCitySuggestions {
                     let cities = self.displayCities
                     switch event.keyCode {

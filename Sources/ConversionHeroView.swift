@@ -3,11 +3,14 @@ import AppKit
 
 /// A Spotlight-style hero view that displays time format conversions
 /// When user types 12hr format, shows 24hr equivalent and vice versa
+/// When a city is tagged, shows local time conversion
 struct ConversionHeroView: View {
     let inputTime: String
     let detectedDate: Date  // The exact time user typed (e.g., 3:21 for "321")
     let timeOffset: Double  // Current slider position
     let baseTimeOffset: Double  // Slider position when time was first detected
+    var selectedCity: City? = nil  // Tagged city for remote time conversion
+    var localTimezoneId: String = TimeZone.current.identifier  // User's local timezone
     
     @State private var showCopied = false
     
@@ -47,8 +50,26 @@ struct ConversionHeroView: View {
     
     /// The converted time string (opposite format of input)
     /// Updates with slider movement
+    /// When city is tagged, shows local time instead of format conversion
     private var convertedTime: String {
         let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        
+        // When a city is tagged
+        if let city = selectedCity {
+            // If input is empty, show the CITY's current time (not local)
+            if inputTime.trimmingCharacters(in: .whitespaces).isEmpty {
+                if let cityTZ = TimeZone(identifier: city.timezone) {
+                    formatter.timeZone = cityTZ
+                }
+                return formatter.string(from: Date())  // Current time in city's TZ
+            }
+            
+            // Otherwise, show local time conversion
+            formatter.timeZone = TimeZone(identifier: localTimezoneId)
+            return formatter.string(from: displayedDate)
+        }
+        
         if inputIsMathExpression {
             // Math expressions always output 12hr format
             formatter.dateFormat = "h:mm a"
@@ -97,6 +118,28 @@ struct ConversionHeroView: View {
     
     /// Label describing the conversion direction
     private var conversionLabel: String {
+        // When city is tagged
+        if let city = selectedCity {
+            // Check if it's a math expression - show "Calculated time"
+            if inputIsMathExpression {
+                return "Calculated time"
+            }
+            
+            // Check if input is empty (showing city's current time)
+            if inputTime.trimmingCharacters(in: .whitespaces).isEmpty {
+                return "Current time in \(city.city) is"
+            }
+            
+            // Format the input time nicely for direct time conversion
+            let timeFormatter = DateFormatter()
+            timeFormatter.dateFormat = "h:mm a"
+            if let cityTZ = TimeZone(identifier: city.timezone) {
+                timeFormatter.timeZone = cityTZ
+            }
+            let remoteTimeStr = timeFormatter.string(from: displayedDate)
+            return "\(remoteTimeStr) in \(city.city) is"
+        }
+        
         if inputIsMathExpression {
             return "Calculated time"
         } else if inputIs12HourFormat {
@@ -144,8 +187,14 @@ struct ConversionHeroView: View {
                     .font(.system(size: 32, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
                 
+                // Show "Your Local Time" when city is tagged AND user typed something
+                if selectedCity != nil && !inputTime.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Text("Your Local Time")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.green)
+                }
                 // Day context shown smaller below (only for math expressions)
-                if let dayContext = dayContextLabel {
+                else if let dayContext = dayContextLabel {
                     Text(dayContext)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.blue)
